@@ -24,9 +24,35 @@ type RealtimeEvent = {
   jobId: string;
   message: string;
   data?: unknown;
+  timestamp: string;
+};
+
+type JobSnapshot = {
+  id: string;
+  state: string;
+  progress: number | object;
+  updatedAt: string;
+};
+
+const eventHistory: RealtimeEvent[] = [];
+const maxHistory = 200;
+const jobsRuntimeStore = new Map<string, JobSnapshot>();
+
+const saveEvent = (event: RealtimeEvent) => {
+  eventHistory.unshift(event);
+
+  if (eventHistory.length > maxHistory) {
+    eventHistory.pop();
+  }
+};
+
+const upsertJob = (job: JobSnapshot) => {
+  jobsRuntimeStore.set(job.id, job);
 };
 
 const sendEvent = (payload: RealtimeEvent) => {
+  saveEvent(payload);
+
   const body = `data: ${JSON.stringify(payload)}\n\n`;
 
   for (const response of subscribers) {
@@ -52,6 +78,13 @@ app.get('/events', (req, res) => {
   });
 });
 
+app.get('/runtime-data', (_, res) => {
+  res.json({
+    events: eventHistory,
+    jobs: [...jobsRuntimeStore.values()],
+  });
+});
+
 app.post('/jobs/start', async (_, res) => {
   const job = await queue.add('long-task', {
     startedAt: new Date().toISOString(),
@@ -61,6 +94,14 @@ app.post('/jobs/start', async (_, res) => {
     type: 'job-added',
     jobId: job.id ?? 'unknown',
     message: `Job ${job.id} was added to queue`,
+    timestamp: new Date().toISOString(),
+  });
+
+  upsertJob({
+    id: job.id ?? 'unknown',
+    state: 'waiting',
+    progress: 0,
+    updatedAt: new Date().toISOString(),
   });
 
   res.status(202).json({ jobId: job.id });
@@ -100,6 +141,14 @@ worker.on('active', (job) => {
     type: 'job-active',
     jobId: job.id ?? 'unknown',
     message: `Job ${job.id} started processing`,
+    timestamp: new Date().toISOString(),
+  });
+
+  upsertJob({
+    id: job.id ?? 'unknown',
+    state: 'active',
+    progress: job.progress,
+    updatedAt: new Date().toISOString(),
   });
 });
 
@@ -109,6 +158,14 @@ worker.on('progress', (job, progress) => {
     jobId: job.id ?? 'unknown',
     message: `Job ${job.id} progress: ${progress}%`,
     data: progress,
+    timestamp: new Date().toISOString(),
+  });
+
+  upsertJob({
+    id: job.id ?? 'unknown',
+    state: 'active',
+    progress,
+    updatedAt: new Date().toISOString(),
   });
 });
 
@@ -118,6 +175,14 @@ queueEvents.on('completed', ({ jobId, returnvalue }) => {
     jobId,
     message: `Job ${jobId} finished successfully`,
     data: returnvalue,
+    timestamp: new Date().toISOString(),
+  });
+
+  upsertJob({
+    id: jobId,
+    state: 'completed',
+    progress: 100,
+    updatedAt: new Date().toISOString(),
   });
 });
 
@@ -126,6 +191,14 @@ queueEvents.on('failed', ({ jobId, failedReason }) => {
     type: 'job-failed',
     jobId,
     message: `Job ${jobId} failed: ${failedReason}`,
+    timestamp: new Date().toISOString(),
+  });
+
+  upsertJob({
+    id: jobId,
+    state: 'failed',
+    progress: 0,
+    updatedAt: new Date().toISOString(),
   });
 });
 

@@ -5,6 +5,7 @@ Simple TypeScript project that shows:
 - **Backend:** Express + BullMQ queue/worker
 - **Frontend:** Next.js UI
 - **Realtime updates:** **SSE** (Server-Sent Events) showing `added`, `processing`, `progress`, and `finished`
+- **Runtime persistence (no DB):** history kept in backend memory while server is running, so refresh still shows old data
 
 ## 1) Requirements
 
@@ -47,6 +48,7 @@ npm run dev
 - `POST /jobs/start` → enqueue job
 - `GET /jobs/:id` → check one job status
 - `GET /events` → SSE stream
+- `GET /runtime-data` → in-memory events/jobs history for page refresh
 
 ## Environment variables (optional)
 
